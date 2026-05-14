@@ -13,6 +13,10 @@ import re
 import sqlite3
 from datetime import datetime
 
+# Document type categories for uploaded files (used by RAG).
+DOCUMENT_TYPES = ("law_reference", "winning_case", "losing_case", "general_document")
+DEFAULT_DOCUMENT_TYPE = "general_document"
+
 
 class DatabaseService:
     def __init__(self, db_path):
@@ -32,25 +36,29 @@ class DatabaseService:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS users (
-                    id          TEXT PRIMARY KEY,
-                    name        TEXT,
-                    created_at  TEXT
+                    id            TEXT PRIMARY KEY,
+                    name          TEXT,
+                    email         TEXT UNIQUE,
+                    password_hash TEXT,
+                    created_at    TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS uploaded_documents (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id     TEXT,
-                    filename    TEXT,
-                    file_path   TEXT,
-                    created_at  TEXT
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id       TEXT,
+                    filename      TEXT,
+                    file_path     TEXT,
+                    document_type TEXT,
+                    created_at    TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS document_chunks (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    document_id  INTEGER,
-                    chunk_index  INTEGER,
-                    chunk_text   TEXT,
-                    created_at   TEXT
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id   INTEGER,
+                    chunk_index   INTEGER,
+                    chunk_text    TEXT,
+                    document_type TEXT,
+                    created_at    TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS questions (
@@ -84,6 +92,19 @@ class DatabaseService:
                 );
                 """
             )
+        # Lightweight migration: add new columns to databases created by an
+        # earlier version of the app (CREATE TABLE IF NOT EXISTS won't do it).
+        self._add_column_if_missing("users", "email", "TEXT")
+        self._add_column_if_missing("users", "password_hash", "TEXT")
+        self._add_column_if_missing("uploaded_documents", "document_type", "TEXT")
+        self._add_column_if_missing("document_chunks", "document_type", "TEXT")
+
+    def _add_column_if_missing(self, table, column, col_type):
+        with self._connect() as conn:
+            existing = {row["name"] for row in
+                        conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
     @staticmethod
     def _now():
@@ -93,43 +114,77 @@ class DatabaseService:
     # Users
     # ------------------------------------------------------------------
     def create_user(self, user_id, name):
+        """Create a lightweight (anonymous / guest) user row if absent."""
         with self._connect() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO users (id, name, created_at) VALUES (?, ?, ?)",
                 (user_id, name, self._now()),
             )
 
+    def create_account(self, user_id, name, email, password_hash):
+        """Create a real account with email + hashed password."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO users (id, name, email, password_hash, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, name, email, password_hash, self._now()),
+            )
+
+    def get_user_by_email(self, email):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_user_by_id(self, user_id):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
     # ------------------------------------------------------------------
     # Documents + chunks (RAG storage)
     # ------------------------------------------------------------------
-    def add_document(self, user_id, filename, file_path):
+    def add_document(self, user_id, filename, file_path,
+                     document_type=DEFAULT_DOCUMENT_TYPE):
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO uploaded_documents (user_id, filename, file_path, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (user_id, filename, file_path, self._now()),
+                "INSERT INTO uploaded_documents (user_id, filename, file_path, "
+                "document_type, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, filename, file_path, document_type, self._now()),
             )
             return cur.lastrowid
 
-    def add_chunk(self, document_id, chunk_index, chunk_text):
+    def add_chunk(self, document_id, chunk_index, chunk_text,
+                  document_type=DEFAULT_DOCUMENT_TYPE):
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO document_chunks (document_id, chunk_index, chunk_text, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (document_id, chunk_index, chunk_text, self._now()),
+                "INSERT INTO document_chunks (document_id, chunk_index, chunk_text, "
+                "document_type, created_at) VALUES (?, ?, ?, ?, ?)",
+                (document_id, chunk_index, chunk_text, document_type, self._now()),
             )
 
-    def search_chunks(self, query, limit=5):
+    def search_chunks(self, query, limit=5, document_type=None):
         """
         Very simple keyword-based RAG search (no vector DB needed for an MVP).
         Scores each stored chunk by how many query keywords it contains and
-        returns the top `limit` chunk texts.
+        returns the top `limit` chunk texts. Optionally filtered by document_type.
         """
         keywords = [w for w in re.findall(r"\w+", query.lower()) if len(w) > 2]
         if not keywords:
             return []
         with self._connect() as conn:
-            rows = conn.execute("SELECT chunk_text FROM document_chunks").fetchall()
+            if document_type:
+                rows = conn.execute(
+                    "SELECT chunk_text FROM document_chunks WHERE document_type = ?",
+                    (document_type,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT chunk_text FROM document_chunks"
+                ).fetchall()
 
         scored = []
         for row in rows:

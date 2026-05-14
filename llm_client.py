@@ -259,11 +259,36 @@ def _mock_checklist():
     )
 
 
+def _mock_judge_prep():
+    return (
+        "WINNING PATTERNS:\n"
+        "Similar arguments tended to succeed when the answer was specific about "
+        "the governing rules, backed claims with concrete evidence, and set "
+        "realistic expectations instead of guaranteeing an outcome.\n\n"
+        "LOSING PATTERNS:\n"
+        "Similar arguments tended to fail when key facts or deadlines were "
+        "missing, when the reasoning overclaimed, or when no supporting "
+        "documents were identified.\n\n"
+        "THE FINAL ANSWER MUST AVOID:\n"
+        "Vague generalities, overconfident promises, and ignoring missing "
+        "information.\n\n"
+        "STRONG REASONING SHOULD INCLUDE:\n"
+        "Clear principles, the limits of general legal information, concrete "
+        "next steps, and the evidence the user should gather.\n\n"
+        "REVIEW CRITERIA:\n"
+        "Clarity, logical structure, completeness, balance, usefulness, and "
+        "whether the answer actually addresses the user's question."
+    )
+
+
 def _mock_response(task, user_text, iteration):
     question = _extract_line("QUESTION:", user_text) or "your legal matter"
 
     if task == "risk_checklist":
         return _mock_checklist()
+
+    if task == "judge_prepare":
+        return _mock_judge_prep()
 
     if task == "lawyer_draft":
         return _mock_draft(question, revised=False)

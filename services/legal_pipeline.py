@@ -17,6 +17,7 @@ Every visible step is recorded in `agent_trace` (drafts, checklist, feedback,
 approvals, rejections, emergency notes) — never hidden chain-of-thought.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from agents import LawyerAgent, RiskAgent, JudgeAgent
@@ -25,6 +26,8 @@ from parsing import (
     parse_sections,
     normalize_sections,
     format_final_answer,
+    format_shared_context,
+    flatten_shared_memory,
 )
 
 # ---------------------------------------------------------------------------
@@ -54,10 +57,17 @@ class LegalPipeline:
         self.judge = JudgeAgent(llm)
 
     # ------------------------------------------------------------------
-    def run(self, question, mode, rag_chunks):
+    def run(self, question, mode, rag_context):
+        """
+        `rag_context` is the SHARED legal memory dict (retrieved once, organised
+        by document_type) so the Lawyer, Risk and Judge agents all see the same
+        law references and past winning/losing cases.
+        """
         mode = mode if mode in MODE_LIMITS else DEFAULT_MODE
         limits = MODE_LIMITS[mode]
-        context = _format_context(rag_chunks)
+        # Format the shared memory ONCE and give the identical block to all agents.
+        context = format_shared_context(rag_context)
+        rag_flat = flatten_shared_memory(rag_context)
 
         trace = []
         step = {"n": 0}
@@ -77,16 +87,35 @@ class LegalPipeline:
                 "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
             })
 
-        # --- Step 1: Lawyer first draft + Risk fixed checklist -----------
-        # (These two tasks are independent and could run in parallel.)
-        draft = self.lawyer.draft(question, context)
+        # --- Step 0: Shared RAG memory ----------------------------------
+        rc = rag_context or {}
+        record("memory", "System", 1, "retrieved",
+               "Shared RAG memory retrieved and organised by document type — "
+               "the same context is given to every agent.\n\n"
+               f"Law references: {len(rc.get('law_reference_chunks') or [])} | "
+               f"Winning cases: {len(rc.get('winning_case_chunks') or [])} | "
+               f"Losing cases: {len(rc.get('losing_case_chunks') or [])} | "
+               f"General documents: {len(rc.get('general_chunks') or [])}")
+
+        # --- Step 1: PARALLEL preparation -------------------------------
+        # Lawyer first draft + Risk fixed checklist + Judge preparation notes
+        # all start from the same question and the same shared memory.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_draft = pool.submit(self.lawyer.draft, question, context)
+            f_checklist = pool.submit(self.risk.create_checklist, question, context)
+            f_prep = pool.submit(self.judge.prepare, question, context)
+            draft = f_draft.result()
+            checklist = f_checklist.result()
+            judge_prep = f_prep.result()
+
         record("draft", "Lawyer", 1, "created",
                "Lawyer created the initial legal draft.\n\n" + draft)
-
-        checklist = self.risk.create_checklist(question, context)
         record("checklist", "Risk", 1, "created",
                "Risk created the fixed checklist (this stays fixed for the "
                "whole process).\n\n" + checklist)
+        record("judge_prep", "Judge", 1, "created",
+               "Judge created preparation notes from the winning and losing "
+               "cases (this stays fixed for the whole process).\n\n" + judge_prep)
 
         emergency_notes = []
         last_missing = []
@@ -129,7 +158,8 @@ class LegalPipeline:
         last_judge_feedback = ""
         while judge_iteration < limits["judge_max"]:
             judge_iteration += 1
-            judgement = self.judge.review(question, draft, iteration=judge_iteration)
+            judgement = self.judge.review(
+                question, draft, prep_notes=judge_prep, iteration=judge_iteration)
             if judgement["approved"]:
                 record("judge_review", "Judge", judge_iteration, "approved",
                        "Judge approved the final answer.\n\n" + judgement["feedback"],
@@ -206,7 +236,7 @@ class LegalPipeline:
             "trial_chat": _build_trial_chat(trace),
             "warnings": emergency_notes,
             "used_facts": [c[:160] + ("..." if len(c) > 160 else "")
-                           for c in (rag_chunks or [])],
+                           for c in rag_flat],
             "mode": mode,
         }
 
@@ -214,17 +244,13 @@ class LegalPipeline:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _format_context(rag_chunks):
-    if not rag_chunks:
-        return ""
-    parts = [f"[Document excerpt {i}]\n{c}" for i, c in enumerate(rag_chunks, 1)]
-    return "\n\n".join(parts)
 
-
-# Short, friendly one-liners for the live "courtroom" animation in the UI.
+# Short, friendly one-liners for the optional agent-dialogue view in the UI.
 _TRIAL_LINES = {
+    ("memory", "retrieved"): "Relevant law references and past cases were gathered.",
     ("draft", "created"): "I have prepared the initial draft of your legal guidance.",
     ("checklist", "created"): "Here is the fixed checklist the final answer must satisfy.",
+    ("judge_prep", "created"): "I reviewed past winning and losing cases to prepare my evaluation.",
     ("risk_review", "approved"): "The draft satisfies the checklist. Approved.",
     ("risk_review", "rejected"): "The draft is missing required checklist points — sending it back.",
     ("lawyer_revision", "revised"): "I have revised the draft to address the feedback.",

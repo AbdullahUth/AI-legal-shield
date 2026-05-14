@@ -15,10 +15,13 @@ whole system still works fine when no PDFs have been uploaded at all.
 
 from pypdf import PdfReader
 
+from database import DEFAULT_DOCUMENT_TYPE
+
 # Chunking configuration (kept as constants so they are easy to tune).
 CHUNK_SIZE_WORDS = 700      # target words per chunk (spec: ~500-1000)
 CHUNK_OVERLAP_WORDS = 100   # overlap between consecutive chunks
 TOP_K_CHUNKS = 5            # how many chunks to retrieve per question (spec: 3-5)
+TOP_K_PER_TYPE = 3          # how many chunks to retrieve per document type
 
 
 class RAGService:
@@ -54,15 +57,16 @@ class RAGService:
         return chunks
 
     # ------------------------------------------------------------------
-    # Full ingest pipeline: PDF file -> DB rows
+    # Full ingest pipeline: PDF file -> DB rows (tagged with document_type)
     # ------------------------------------------------------------------
-    def ingest(self, user_id, filename, file_path):
+    def ingest(self, user_id, filename, file_path,
+               document_type=DEFAULT_DOCUMENT_TYPE):
         """Returns (document_id, chunks_created)."""
         text = self.extract_text(file_path)
-        document_id = self.db.add_document(user_id, filename, file_path)
+        document_id = self.db.add_document(user_id, filename, file_path, document_type)
         chunks = self.chunk_text(text)
         for index, chunk in enumerate(chunks):
-            self.db.add_chunk(document_id, index, chunk)
+            self.db.add_chunk(document_id, index, chunk, document_type)
         return document_id, len(chunks)
 
     # ------------------------------------------------------------------
@@ -72,9 +76,26 @@ class RAGService:
         """Return the most relevant chunk texts for a question (may be empty)."""
         return self.db.search_chunks(question, limit=limit)
 
+    def retrieve_shared_memory(self, question):
+        """
+        Retrieve relevant chunks ONCE, organised by document_type, so the
+        Lawyer, Risk and Judge agents all share the exact same legal memory.
+        Returns a dict — empty lists are fine (system works without uploads).
+        """
+        return {
+            "law_reference_chunks": self.db.search_chunks(
+                question, limit=TOP_K_PER_TYPE, document_type="law_reference"),
+            "winning_case_chunks": self.db.search_chunks(
+                question, limit=TOP_K_PER_TYPE, document_type="winning_case"),
+            "losing_case_chunks": self.db.search_chunks(
+                question, limit=TOP_K_PER_TYPE, document_type="losing_case"),
+            "general_chunks": self.db.search_chunks(
+                question, limit=TOP_K_PER_TYPE, document_type="general_document"),
+        }
+
     @staticmethod
     def format_context(chunks):
-        """Turn retrieved chunks into a plain-text context block for the agents."""
+        """Turn a flat list of chunks into a plain-text context block."""
         if not chunks:
             return ""
         parts = []

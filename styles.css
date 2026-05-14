@@ -660,3 +660,149 @@ body.light-mode .close-btn:hover {
 }
 body.light-mode .history-block { background: #ffffff !important; border-color: #cbd5e1 !important; }
 body.light-mode .history-a { color: #334155 !important; }
+
+/* ===== Feature additions: auth, voice, thinking, accessibility ===== */
+
+/* Screen-reader-only (visually hidden, still announced) */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Login / signup */
+.auth-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.auth-tab {
+  flex: 1; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid #e5e7eb; background: #f8fafc; color: #4b5563;
+  font-size: 13px; font-weight: 600; transition: all .2s;
+}
+.auth-tab.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+.auth-field.hidden { display: none; }
+.auth-msg { margin-top: 10px; font-size: 12px; min-height: 16px; color: #6b7280; }
+.auth-msg.error { color: #dc2626; }
+.guest-btn {
+  margin-top: 12px; width: 100%; padding: 9px;
+  background: transparent; color: #6b7280;
+  border: 1px dashed #cbd5e1; border-radius: 6px;
+  font-size: 13px; transition: all .2s;
+}
+.guest-btn:hover { color: var(--navy); border-color: var(--navy); }
+
+/* Logout button in the consultation header */
+.logout-btn {
+  padding: 7px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--line);
+  color: var(--text); font-size: 12px; transition: all .2s;
+}
+.logout-btn:hover { background: var(--gold); color: #fff; }
+
+/* Document type selector in the upload area */
+.doc-type-select {
+  padding: 6px 10px; border-radius: 999px;
+  border: 1px solid rgba(212,175,55,0.45);
+  background: rgba(212,175,55,0.06); color: var(--text);
+  font-size: 11px; outline: none;
+}
+.doc-type-select:focus { border-color: var(--gold); }
+body.light-mode .doc-type-select { background: #fff; color: #0f172a; }
+
+/* Microphone (voice input) button */
+.mic-btn {
+  flex-shrink: 0; width: 42px; height: 42px; border-radius: 8px;
+  border: 1px solid var(--line); background: rgba(255,255,255,0.05);
+  color: var(--text); display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.mic-btn:hover { border-color: rgba(212,175,55,0.6); color: var(--gold); }
+.mic-btn.listening {
+  background: var(--gold); color: var(--navy-deep);
+  animation: micPulse 1.2s ease-in-out infinite;
+}
+@keyframes micPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212,175,55,0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(212,175,55,0); }
+}
+
+/* Voice output buttons under the final answer */
+.voice-bar { display: flex; gap: 8px; margin-left: 44px; flex-wrap: wrap; }
+.voice-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid rgba(212,175,55,0.45);
+  background: rgba(212,175,55,0.06); color: var(--gold);
+  font-size: 12px; transition: all .2s;
+}
+.voice-btn:hover:not(:disabled) { background: rgba(212,175,55,0.14); }
+.voice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.voice-btn.speaking { background: var(--gold); color: var(--navy-deep); }
+
+/* Clean "Thinking..." loading card (replaces the live courtroom animation) */
+.thinking-card {
+  border: 1px solid rgba(212,175,55,0.25);
+  background: rgba(0,0,0,0.4);
+  border-radius: 12px; padding: 20px;
+  display: flex; flex-direction: column; gap: 12px;
+  max-width: 85%;
+}
+.thinking-head { display: flex; align-items: center; gap: 10px; }
+.thinking-title {
+  font-family: 'Playfair Display', serif; color: var(--gold); font-size: 16px;
+}
+.thinking-phrase { font-size: 14px; color: rgba(255,255,255,0.85); }
+body.light-mode .thinking-card { background: #fff; }
+body.light-mode .thinking-phrase { color: #334155; }
+.thinking-dots { display: flex; gap: 6px; }
+.thinking-dots i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); display: inline-block;
+  animation: thinkBounce 1.2s ease-in-out infinite;
+}
+.thinking-dots i:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes thinkBounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+  40% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* System speaker badge in the agent dialogue */
+.speaker.system { background: rgba(148,163,184,0.18); color: #cbd5e1; }
+
+/* ===== Admin Knowledge Upload panel (landing page) ===== */
+.admin-panel {
+  margin-top: 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(212,175,55,0.35);
+  border-radius: 12px;
+  padding: 4px 14px;
+}
+.admin-panel summary {
+  cursor: pointer; padding: 10px 0;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gold);
+  list-style: none;
+}
+.admin-panel summary::-webkit-details-marker { display: none; }
+.admin-panel summary::before { content: "▸ "; }
+.admin-panel[open] summary::before { content: "▾ "; }
+.admin-body { display: flex; flex-direction: column; gap: 10px; padding: 6px 0 14px; }
+.admin-hint { font-size: 12px; color: var(--muted); }
+.admin-input {
+  width: 100%; padding: 9px 12px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.06); color: var(--text);
+  font-size: 13px; outline: none;
+}
+.admin-input:focus { border-color: rgba(212,175,55,0.6); }
+.admin-btn {
+  padding: 9px 12px; border-radius: 6px;
+  background: var(--gold); color: var(--navy-deep);
+  font-size: 13px; font-weight: 600; transition: filter .2s;
+}
+.admin-btn:hover { filter: brightness(1.1); }
+.admin-status { font-size: 12px; min-height: 14px; color: var(--muted); }
+.admin-status.uploading { color: var(--gold); }
+.admin-status.success { color: #10b981; }
+.admin-status.error { color: #f87171; }
+body.light-mode .admin-panel { background: #fff; }
+body.light-mode .admin-input { background: #fff; color: #0f172a; }
