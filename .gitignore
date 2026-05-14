@@ -1,0 +1,20 @@
+# Environment / secrets - NEVER commit the real API keys
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Database (generated at runtime)
+*.db
+
+# Uploaded PDFs (generated at runtime)
+uploads/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
